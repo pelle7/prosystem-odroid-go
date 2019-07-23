@@ -6,3 +6,4 @@
 *.gch
 sdkconfig.old
 build/
+.project

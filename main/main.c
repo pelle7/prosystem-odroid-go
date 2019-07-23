@@ -771,6 +771,61 @@ void emu_step(odroid_gamepad_state* gamepad)
     odroid_audio_submit((int16_t*)sampleBuffer, length);
 }
 
+void check_boot_cause()
+{
+    // Boot state overrides
+    bool forceConsoleReset = false;
+
+    switch (esp_sleep_get_wakeup_cause())
+    {
+        case ESP_SLEEP_WAKEUP_EXT0:
+        {
+            printf("app_main: ESP_SLEEP_WAKEUP_EXT0 deep sleep wake\n");
+            break;
+        }
+
+        case ESP_SLEEP_WAKEUP_EXT1:
+        case ESP_SLEEP_WAKEUP_TIMER:
+        case ESP_SLEEP_WAKEUP_TOUCHPAD:
+        case ESP_SLEEP_WAKEUP_ULP:
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+        {
+            printf("app_main: Non deep sleep startup\n");
+
+            odroid_gamepad_state bootState = odroid_input_read_raw();
+
+            if (bootState.values[ODROID_INPUT_MENU])
+            {
+                // Force return to factory app to recover from
+                // ROM loading crashes
+
+                // Set menu application
+                odroid_system_application_set(0);
+
+                // Reset
+                esp_restart();
+            }
+
+            if (bootState.values[ODROID_INPUT_START])
+            {
+                // Reset emulator if button held at startup to
+                // override save state
+                forceConsoleReset = true;
+            }
+
+            break;
+        }
+        default:
+            printf("app_main: Not a deep sleep reset\n");
+            break;
+    }
+
+    if (odroid_settings_StartAction_get() == ODROID_START_ACTION_RESTART)
+    {
+        forceConsoleReset = true;
+        odroid_settings_StartAction_set(ODROID_START_ACTION_NORMAL);
+    }
+}
 
 bool RenderFlag;
 void app_main()
@@ -788,6 +843,8 @@ void app_main()
     odroid_input_gamepad_init();
     odroid_input_battery_level_init();
 
+    check_boot_cause();
+
     ili9341_prepare();
 
     ili9341_init();
@@ -804,7 +861,11 @@ void app_main()
     }
 
 
-    const char* romfile = ChooseFile();
+    const char* romfile = odroid_settings_RomFilePath_get();
+    if (!romfile)
+    {
+        ChooseFile();
+    }
     printf("%s: filename='%s'\n", __func__, romfile);
 
 
@@ -845,6 +906,7 @@ void app_main()
         if (last_gamepad.values[ODROID_INPUT_MENU] &&
             !gamepad.values[ODROID_INPUT_MENU])
         {
+            odroid_system_application_set(0);
             esp_restart();
         }
 

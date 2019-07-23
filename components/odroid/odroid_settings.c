@@ -4,6 +4,7 @@
 #include "string.h"
 
 #include "odroid_audio.h"
+#include "odroid_settings.h"
 
 
 static const char* NvsNamespace = "Odroid";
@@ -14,8 +15,7 @@ static const char* NvsKey_VRef = "VRef";
 static const char* NvsKey_AppSlot = "AppSlot";
 static const char* NvsKey_DataSlot = "DataSlot";
 static const char* NvsKey_Backlight = "Backlight";
-
-
+static const char* NvsKey_StartAction = "StartAction";
 
 char* odroid_util_GetFileName(const char* path)
 {
@@ -352,6 +352,42 @@ void odroid_settings_Backlight_set(int32_t value)
 
     // Read
     err = nvs_set_i32(my_handle, NvsKey_Backlight, value);
+    if (err != ESP_OK) abort();
+
+    // Close
+    nvs_close(my_handle);
+}
+
+ODROID_START_ACTION odroid_settings_StartAction_get()
+{
+    int result = 0;
+
+    // Open
+    nvs_handle my_handle;
+    esp_err_t err = nvs_open(NvsNamespace, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) abort();
+
+    // Read
+    err = nvs_get_i32(my_handle, NvsKey_StartAction, &result);
+    if (err == ESP_OK)
+    {
+        printf("%s: value=%d\n", __func__, result);
+    }
+
+    // Close
+    nvs_close(my_handle);
+
+    return result;
+}
+void odroid_settings_StartAction_set(ODROID_START_ACTION value)
+{
+    // Open
+    nvs_handle my_handle;
+    esp_err_t err = nvs_open(NvsNamespace, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) abort();
+
+    // Write
+    err = nvs_set_i32(my_handle, NvsKey_StartAction, value);
     if (err != ESP_OK) abort();
 
     // Close
