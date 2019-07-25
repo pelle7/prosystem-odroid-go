@@ -5,4 +5,4 @@ export PORT=/dev/cu.SLAB_USBtoUART
 #export OFFSET=0x100000
 export OFFSET=0x900000
 
-esptool.py --chip esp32 --port $PORT --baud 921600 write_flash -fs detect --flash_freq 80m --flash_mode qio $OFFSET build/stella-go.bin
+esptool.py --chip esp32 --port $PORT --baud 921600 write_flash -fs detect --flash_freq 80m --flash_mode qio $OFFSET build/prosystem-go.bin

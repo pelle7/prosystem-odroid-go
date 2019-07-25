@@ -206,3 +206,8 @@ int odroid_audio_sample_rate_get()
 {
     return audio_sample_rate;
 }
+
+void odroid_audio_mute()
+{
+    i2s_zero_dma_buffer(I2S_NUM);   
+}

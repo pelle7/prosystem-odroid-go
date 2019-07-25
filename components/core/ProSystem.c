@@ -256,3 +256,123 @@ void prosystem_Close(void)
    tia_Reset( );
    tia_Clear( );
 }
+
+#define SAVESTATE_BUFFER_HEADER_AND_REGS_SIZE (61)
+// ----------------------------------------------------------------------------
+// Save to FILE ref
+// ----------------------------------------------------------------------------
+bool QuickSaveState(FILE* f)
+{
+   char buffer[SAVESTATE_BUFFER_HEADER_AND_REGS_SIZE];
+   uint32_t size = 0;
+   uint32_t index;
+
+   for(index = 0; index < 16; index++)
+      buffer[size + index] = PRO_SYSTEM_STATE_HEADER[index];
+   size += 16;
+
+   buffer[size++] = 1;
+   for(index = 0; index < 4; index++)
+      buffer[size + index] = 0;
+   size += 4;
+
+   for(index = 0; index < 32; index++)
+      buffer[size + index] = cartridge_digest[index];
+   size += 32;
+
+   buffer[size++] = sally_a;
+   buffer[size++] = sally_x;
+   buffer[size++] = sally_y;
+   buffer[size++] = sally_p;
+   buffer[size++] = sally_s;
+   buffer[size++] = sally_pc.b.l;
+   buffer[size++] = sally_pc.b.h;
+   buffer[size++] = cartridge_bank;
+   if (size>SAVESTATE_BUFFER_HEADER_AND_REGS_SIZE)
+   {
+      printf("HMMM: %d\n", size);
+   }
+   
+   fwrite(buffer, sizeof(uint8_t), SAVESTATE_BUFFER_HEADER_AND_REGS_SIZE, f);
+   fwrite(memory_ram, sizeof(uint8_t), 16384, f);
+   
+   if(cartridge_type == CARTRIDGE_TYPE_SUPERCART_RAM)
+   {
+       abort();
+    //   for(index = 0; index < 16384; index++)
+    //      buffer[size + index] = memory_ram[16384 + index];
+    //   size += 16384;
+   }
+
+   return true;
+}
+
+// ----------------------------------------------------------------------------
+// Load from FILE ref
+// ----------------------------------------------------------------------------
+bool QuickLoadState(FILE* f)
+{
+   uint32_t index;
+   uint8_t version;
+   char buffer[SAVESTATE_BUFFER_HEADER_AND_REGS_SIZE];
+   char digest[33] = {0};
+   uint32_t date   = 0;
+   uint32_t size   = 0;
+   uint32_t offset = 0;
+   if (fread(buffer, 1, SAVESTATE_BUFFER_HEADER_AND_REGS_SIZE, f) != SAVESTATE_BUFFER_HEADER_AND_REGS_SIZE)
+   {
+      return false;
+   }
+
+   for(index = 0; index < 16; index++)
+   {
+      /* File is not a valid ProSystem save state. */
+      if(buffer[offset + index] != PRO_SYSTEM_STATE_HEADER[index])
+         return false;
+   }
+   offset += 16;
+   version = buffer[offset++];
+
+   for(index = 0; index < 4; index++);
+   offset += 4;
+
+   for(index = 0; index < 32; index++)
+      digest[index] = buffer[offset + index];
+
+   offset += 32;
+
+   /* Does not match loaded cartridge digest? */
+   if(strcmp(cartridge_digest, digest) != 0)
+      return false;
+
+   sally_a = buffer[offset++];
+   sally_x = buffer[offset++];
+   sally_y = buffer[offset++];
+   sally_p = buffer[offset++];
+   sally_s = buffer[offset++];
+   sally_pc.b.l = buffer[offset++];
+   sally_pc.b.h = buffer[offset++];
+
+   cartridge_StoreBank(buffer[offset++]);
+
+   if (fread(memory_ram, 1, 16384, f) != 16384)
+   {
+      return false;
+   }
+   
+   if(cartridge_type == CARTRIDGE_TYPE_SUPERCART_RAM)
+   {
+      abort();
+      /* Save state file has an invalid size. */
+      /*
+      if(size != 32829)
+         return false;
+
+      for(index = 0; index < 16384; index++)
+         memory_ram[16384 + index] = buffer[offset + index];
+      offset += 16384;
+      */
+   }
+
+   return true;
+}

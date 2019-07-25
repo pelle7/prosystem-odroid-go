@@ -16,7 +16,7 @@
 #include "../components/odroid/odroid_system.h"
 #include "../components/odroid/odroid_display.h"
 #include "../components/odroid/odroid_sdcard.h"
-
+#include "../components/odroid/odroid_ui.h"
 #include "../components/ugui/ugui.h"
 
 
@@ -40,8 +40,11 @@ const char* SD_BASE_PATH = "/sd";
 
 #define AUDIO_SAMPLE_RATE (32000)
 
+#define TASK_BREAK (uint8_t*)1
 QueueHandle_t vidQueue;
+volatile bool videoTaskIsRunning = false;
 
+bool scaling_enabled = true;
 #define VIDEO_WIDTH 320
 #define VIDEO_HEIGHT 292
 uint8_t* framebuffer; //[320 * 240];
@@ -54,13 +57,15 @@ static int16_t* sampleBuffer;
 
 void videoTask(void *arg)
 {
+    videoTaskIsRunning = true;
+
     while(1)
     {
         uint8_t* param;
         xQueuePeek(vidQueue, &param, portMAX_DELAY);
-        //
-        // if (param == (uint16_t*)1)
-        //     break;
+        
+         if (param == TASK_BREAK)
+             break;
 
         //ili9341_write_frame_rectangleLE(0, 0, 320, 240, framebuffer);
 
@@ -71,13 +76,13 @@ void videoTask(void *arg)
 
     }
 
-    odroid_display_lock_sms_display();
+    odroid_display_lock();
 
     // Draw hourglass
     odroid_display_show_hourglass();
 
-    odroid_display_unlock_sms_display();
-
+    odroid_display_unlock();
+    videoTaskIsRunning = false;
     vTaskDelete(NULL);
 
     while (1) {}
@@ -628,9 +633,6 @@ void emu_init(const char* filename)
 
     fclose(fp); fp = NULL;
 
-    odroid_sdcard_close();
-
-
     if (!cartridge_Load((const uint8_t*)data, size))
     {
         abort();
@@ -650,8 +652,9 @@ void emu_init(const char* filename)
     prosystem_Reset();
 
     display_ResetPalette16();
+    
+    DoStartupPost();
 }
-
 
 static void sound_Resample(const uint8_t* source, uint8_t* target, int length)
 {
@@ -771,60 +774,24 @@ void emu_step(odroid_gamepad_state* gamepad)
     odroid_audio_submit((int16_t*)sampleBuffer, length);
 }
 
-void check_boot_cause()
+void DoMenuHome(bool save)
 {
-    // Boot state overrides
-    bool forceConsoleReset = false;
+    uint8_t* param = TASK_BREAK;
+    //void *exitAudioTask = NULL;
 
-    switch (esp_sleep_get_wakeup_cause())
-    {
-        case ESP_SLEEP_WAKEUP_EXT0:
-        {
-            printf("app_main: ESP_SLEEP_WAKEUP_EXT0 deep sleep wake\n");
-            break;
-        }
+    // Clear audio to prevent studdering
+    printf("PowerDown: stopping audio.\n");
+    odroid_audio_terminate();
+    //xQueueSend(audioQueue, &exitAudioTask, portMAX_DELAY);
+    //while (AudioTaskIsRunning) {}
 
-        case ESP_SLEEP_WAKEUP_EXT1:
-        case ESP_SLEEP_WAKEUP_TIMER:
-        case ESP_SLEEP_WAKEUP_TOUCHPAD:
-        case ESP_SLEEP_WAKEUP_ULP:
-        case ESP_SLEEP_WAKEUP_UNDEFINED:
-        {
-            printf("app_main: Non deep sleep startup\n");
+    // Stop tasks
+    printf("PowerDown: stopping tasks.\n");
 
-            odroid_gamepad_state bootState = odroid_input_read_raw();
+    xQueueSend(vidQueue, &param, portMAX_DELAY);
+    while (videoTaskIsRunning) { vTaskDelay(1); }
 
-            if (bootState.values[ODROID_INPUT_MENU])
-            {
-                // Force return to factory app to recover from
-                // ROM loading crashes
-
-                // Set menu application
-                odroid_system_application_set(0);
-
-                // Reset
-                esp_restart();
-            }
-
-            if (bootState.values[ODROID_INPUT_START])
-            {
-                // Reset emulator if button held at startup to
-                // override save state
-                forceConsoleReset = true;
-            }
-
-            break;
-        }
-        default:
-            printf("app_main: Not a deep sleep reset\n");
-            break;
-    }
-
-    if (odroid_settings_StartAction_get() == ODROID_START_ACTION_RESTART)
-    {
-        forceConsoleReset = true;
-        odroid_settings_StartAction_set(ODROID_START_ACTION_NORMAL);
-    }
+    DoReboot(save);
 }
 
 bool RenderFlag;
@@ -868,12 +835,11 @@ void app_main()
     }
     printf("%s: filename='%s'\n", __func__, romfile);
 
-
     ili9341_clear(0x0000);
     emu_init(romfile);
 
     odroid_audio_init(AUDIO_SAMPLE_RATE);
-
+    
     vidQueue = xQueueCreate(1, sizeof(uint16_t*));
     xTaskCreatePinnedToCore(&videoTask, "videoTask", 1024 * 4, NULL, 5, NULL, 1);
 
@@ -895,6 +861,8 @@ void app_main()
         true, false,
         false, true };
 
+    ODROID_UI_MENU_HANDLER_INIT_V1(last_gamepad)
+    
     while(1)
     {
         startTime = xthal_get_ccount();
@@ -903,20 +871,7 @@ void app_main()
         odroid_gamepad_state gamepad;
         odroid_input_gamepad_read(&gamepad);
 
-        if (last_gamepad.values[ODROID_INPUT_MENU] &&
-            !gamepad.values[ODROID_INPUT_MENU])
-        {
-            odroid_system_application_set(0);
-            esp_restart();
-        }
-
-        if (!last_gamepad.values[ODROID_INPUT_VOLUME] &&
-            gamepad.values[ODROID_INPUT_VOLUME])
-        {
-            odroid_audio_volume_change();
-            printf("%s: Volume=%d\n", __func__, odroid_audio_volume_get());
-        }
-
+        ODROID_UI_MENU_HANDLER_LOOP_V1(last_gamepad, gamepad, DoMenuHome, odroid_ui_menu)
 
         RenderFlag = frame & 1; //renderTable[frame & 7];
         emu_step(&gamepad);
