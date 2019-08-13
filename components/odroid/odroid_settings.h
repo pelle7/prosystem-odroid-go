@@ -12,6 +12,12 @@ typedef enum
     ODROID_START_ACTION_RESTART
 } ODROID_START_ACTION;
 
+typedef enum
+{
+    ODROID_AUDIO_SINK_SPEAKER = 0,
+    ODROID_AUDIO_SINK_DAC
+} ODROID_AUDIO_SINK;
+
 int32_t odroid_settings_VRef_get();
 void odroid_settings_VRef_set(int32_t value);
 
@@ -32,3 +38,6 @@ void odroid_settings_Backlight_set(int32_t value);
 
 ODROID_START_ACTION odroid_settings_StartAction_get();
 void odroid_settings_StartAction_set(ODROID_START_ACTION value);
+
+ODROID_AUDIO_SINK odroid_settings_AudioSink_get();
+void odroid_settings_AudioSink_set(ODROID_AUDIO_SINK value);

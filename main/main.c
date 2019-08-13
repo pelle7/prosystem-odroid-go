@@ -838,7 +838,7 @@ void app_main()
     ili9341_clear(0x0000);
     emu_init(romfile);
 
-    odroid_audio_init(AUDIO_SAMPLE_RATE);
+    odroid_audio_init(odroid_settings_AudioSink_get(), AUDIO_SAMPLE_RATE);
     
     vidQueue = xQueueCreate(1, sizeof(uint16_t*));
     xTaskCreatePinnedToCore(&videoTask, "videoTask", 1024 * 4, NULL, 5, NULL, 1);
